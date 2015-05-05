@@ -118,13 +118,13 @@ def words_used_more_than(db, times):
 
 ####################################################################################################
 
-def crawl_reddit(db, subreddit, num_posts):
+def crawl_reddit(db, subreddit_name, num_posts):
     post_data = []
 
     user_agent = ("CS421 reddit crawler")
     r = praw.Reddit(user_agent=user_agent)
 
-    subreddit = r.get_subreddit(subreddit)
+    subreddit = r.get_subreddit(subreddit_name)
     for submission in subreddit.get_hot(limit=num_posts):
         if not submission.author:
             print("Skipping post with no author: "+submission.title.lower())
@@ -145,7 +145,7 @@ def crawl_reddit(db, subreddit, num_posts):
         date_time = '-'.join([month, day, year, ':'.join([hour, minute])])
         
         # Add the post
-        post_data.append((id, title, subreddit, author, date_time))
+        post_data.append((id, title, subreddit_name, author, date_time))
     
     # Build tables
     users = set([(post[3], "reddit") for post in post_data])
