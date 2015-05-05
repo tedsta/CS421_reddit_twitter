@@ -63,52 +63,69 @@ def build_database(db):
 
 def populate_word(db, words):
     for word in words:
-        db.execute("INSERT INTO word values (?, ?);", word)
+        db.execute('SELECT word, use_count '\
+                   'FROM word '\
+                   'WHERE word = ?;', (word[0],))
+        existing = db.fetchone()
+        if existing:
+            db.execute("UPDATE word SET use_count = ? WHERE word = ?;", (word[1]+existing[1], word[0]))
+        else:
+            db.execute("INSERT INTO word values (?, ?);", word)
 
 def populate_user(db, users):
     for user in users:
-        db.execute("INSERT INTO user values (?, ?);", user)
+        db.execute("INSERT OR IGNORE INTO user values (?, ?);", user)
 
 def populate_post(db, posts):
     for post in posts:
-        db.execute("INSERT INTO post values (?, ?, ?, ?);", post)
+        db.execute("INSERT OR IGNORE INTO post values (?, ?, ?, ?);", post)
 
 def populate_reddit_post(db, reddit_posts):
     for reddit_post in reddit_posts:
-        db.execute("INSERT INTO reddit_post values (?, ?);", reddit_post)
+        db.execute("INSERT OR IGNORE INTO reddit_post values (?, ?);", reddit_post)
 
 def populate_twitter_post(db, twitter_posts):
     for twitter_post in twitter_posts:
-        db.execute("INSERT INTO twitter_post values (?, ?);", twitter_post)
+        db.execute("INSERT OR IGNORE INTO twitter_post values (?, ?);", twitter_post)
 
 def populate_user_word(db, user_words):
     for user_word in user_words:
-        db.execute("INSERT INTO user_word values (?, ?);", user_word)
+        db.execute("INSERT OR IGNORE INTO user_word values (?, ?);", user_word)
 
 def populate_post_word(db, post_words):
     for post_word in post_words:
-        db.execute("INSERT INTO post_word values (?, ?);", post_word)
+        db.execute("INSERT OR IGNORE INTO post_word values (?, ?);", post_word)
 
 ####################################################################################################
 
 def reddit_posts_from_user(db, user):
-    db.execute('SELECT content '\
+    db.execute('SELECT * '\
                'FROM post '\
                'WHERE post.author = ?;', (user,))
     return [tuple(row) for row in db.fetchall()]
 
+def users_used_word(db, word):
+    db.execute('SELECT user '\
+               'FROM user_word '\
+               'WHERE word = ?;', (word,))
+    return [tuple(row) for row in db.fetchall()]
+
+def words_used_more_than(db, times):
+    db.execute('SELECT word, use_count '\
+               'FROM word '\
+               'WHERE use_count > ?;', (times,))
+    return [tuple(row) for row in db.fetchall()]
+
 ####################################################################################################
 
-def main():
-    # Data setup
+def crawl_reddit(db, subreddit, num_posts):
     post_data = []
-    
-    # Connect to reddit
+
     user_agent = ("CS421 reddit crawler")
     r = praw.Reddit(user_agent=user_agent)
 
-    subreddit = r.get_subreddit('rust')
-    for submission in subreddit.get_hot(limit=500):
+    subreddit = r.get_subreddit(subreddit)
+    for submission in subreddit.get_hot(limit=num_posts):
         if not submission.author:
             print("Skipping post with no author: "+submission.title.lower())
             continue
@@ -151,39 +168,52 @@ def main():
     posts = [(post[0], post[3], post[1], post[4]) for post in post_data]
     reddit_posts = [(post[0], post[2]) for post in post_data]
     
-    """with open("users.txt", "w") as file:
-        file.write("\n".join([" ".join(list(user)) for user in users]))
-    with open("words.txt", "w") as file:
-        file.write("\n".join([" ".join([word, str(use_count)]) for word, use_count in words.items()]))
-    with open("user_word.txt", "w") as file:
-        file.write("\n".join([" ".join(list(uw)) for uw in user_word]))
-    with open("post_word.txt", "w") as file:
-        file.write("\n".join([" ".join(list(pw)) for pw in post_word]))
-    with open("posts.txt", "w") as file:
-        file.write("\n".join([" ".join(list(post)) for post in posts]))
-    with open("reddit_posts.txt", "w") as file:
-        file.write("\n".join([" ".join(list(reddit_post)) for reddit_post in reddit_posts]))
-    
-    exit()"""
-    
+    # Populate database
+    populate_word(db, [(word, use_count) for word, use_count in words.items()])
+    populate_user(db, users)
+    populate_post(db, posts)
+    populate_reddit_post(db, reddit_posts)
+    populate_post_word(db, post_word)
+    populate_user_word(db, user_word)
+
+####################################################################################################
+
+def main():
     # Connect to sqlite
+    print("Starting SQLite...")
     db = sqlite3.connect(':memory:')
     db_cur = db.cursor()
     
-    # Build and populate the database
-    
+    # Build the database
+    print("Building database...")
     build_database(db_cur)
     
-    populate_word(db_cur, [(word, use_count) for word, use_count in words.items()])
-    populate_user(db_cur, users)
-    populate_post(db_cur, posts)
-    populate_reddit_post(db_cur, reddit_posts)
-    populate_post_word(db_cur, post_word)
-    populate_user_word(db_cur, user_word)
-    
-    print("\n".join([str(row) for row in reddit_posts_from_user(db_cur, "brson")]))
-    
-    db.commit()
+    # Run the command loop
+    while True:
+        line = input('>')
+        line_split = line.split(' ')
+        cmd = line_split[0]
+        args = line_split[1:]
+        
+        if cmd == 'clear':
+            print("Rebuilding database...")
+            db.close()
+            db = sqlite3.connect(':memory:')
+            db_cur = db.cursor()
+            build_database(db_cur)
+        elif cmd == 'crawl':
+            if args[0] == 'reddit':
+                print("Crawling reddit.com/r/"+args[1]+"...")
+                crawl_reddit(db_cur, args[1], int(args[2]))
+        elif cmd == 'posts_from_user':
+            print("\n".join([str(row) for row in reddit_posts_from_user(db_cur, args[0])]))
+        elif cmd == 'users_used_word':
+            print("\n".join([str(row) for row in users_used_word(db_cur, args[0])]))
+        elif cmd == 'words_used_more_than':
+            print("\n".join([str(row) for row in words_used_more_than(db_cur, int(args[0]))]))
+        elif cmd == 'exit':
+            print("Exiting...")
+            break
     
     # Close DB connection
     db.close()
