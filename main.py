@@ -132,7 +132,7 @@ def crawl_reddit(db, subreddit, num_posts):
     
         id = submission.id
         title = submission.title.lower()
-        subreddit = 'rust'
+        subreddit = subreddit
         author = submission.author.name
         
         post_datetime = datetime.datetime.utcfromtimestamp(submission.created_utc)
