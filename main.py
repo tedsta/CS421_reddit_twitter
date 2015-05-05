@@ -196,7 +196,7 @@ def main():
         args = line_split[1:]
         
         if cmd == 'clear':
-            print("Rebuilding database...")
+            print("Clearing database...")
             db.close()
             db = sqlite3.connect(':memory:')
             db_cur = db.cursor()
